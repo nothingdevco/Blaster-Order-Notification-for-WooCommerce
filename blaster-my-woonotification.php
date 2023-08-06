@@ -180,7 +180,7 @@ function blaster_whatsapp_notification_sanitize_api_key($input)
     }
 
     // Send the domain to the API
-    $domain = get_site_url(); // Replace with the appropriate way to get your domain name
+    $domain = home_url(); // Replace with the appropriate way to get your domain name
     blaster_send_domain_to_api($url, $new_api_key, $domain);
 
     // If the key is valid, set a transient indicating a successful update
