@@ -1,0 +1,8 @@
+.wrap form {
+    width: 100%;
+}
+
+.wrap form textarea {
+    width: 100%;
+    height: auto;
+}
