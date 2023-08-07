@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Plugin Name:       Blaster.my WooNotification
+ * Plugin Name:       Blaster.my - WP Notification
  * Plugin URI:        https://app.blaster.my/
  * Description:       Send WhatsApp notification upon order completion. Only for app.blaster.my subscriber.
  * Version:           1.0
@@ -282,8 +282,8 @@ function blaster_whatsapp_notification_add_submenu()
 {
     add_submenu_page(
         'options-general.php',
-        'Blaster.my Settings',
-        'Blaster.my',
+        'Blaster.my - WP Notification Settings',
+        'Blaster.my - WP Notification',
         'manage_options',
         'blaster_whatsapp_notification',
         'blaster_whatsapp_notification_page'
@@ -327,7 +327,7 @@ function blaster_whatsapp_notification_page()
             <?php
             settings_fields('blaster_whatsapp_notification');
             do_settings_sections('blaster_whatsapp_notification');
-            submit_button();
+            submit_button(__('Save Settings', 'blaster-my-woonotification'), 'primary', 'blaster_whatsapp_notification_save_settings');
             ?>
         </form>
         <form method="post" action="">
@@ -350,7 +350,7 @@ add_action('admin_init', 'blaster_whatsapp_notification_add_settings_section');
 
 function blaster_whatsapp_notification_add_settings_section()
 {
-    // Handle message reset
+    // Check if the "Reset Messages to Default" button is clicked
     if (isset($_POST['blaster_whatsapp_notification_reset_messages']) && $_POST['blaster_whatsapp_notification_reset_messages'] === '1') {
         // Reset the custom message to its default state
         $default_completed_message = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} has been completed.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your purchase!";
@@ -358,13 +358,23 @@ function blaster_whatsapp_notification_add_settings_section()
 
         update_option('blaster_whatsapp_notification_completed_message', $default_completed_message);
         update_option('blaster_whatsapp_notification_processing_message', $default_processing_message);
-    } else {
-        // Save settings
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+        // Redirect to the settings page after resetting messages
+        wp_safe_redirect(admin_url('options-general.php?page=blaster_whatsapp_notification'));
+        exit();
+    }
+
+    // Save settings
+    if (isset($_POST['blaster_whatsapp_notification_save_settings'])) {
+        // Check if the API key field is set in the form
+        if (isset($_POST['blaster_whatsapp_notification_api_key'])) {
             $new_api_key = sanitize_text_field($_POST['blaster_whatsapp_notification_api_key']);
             if (!empty($new_api_key) && blaster_is_valid_api_key('https://app.blaster.my/api', $new_api_key)) {
                 // If the API key is valid, update the option
                 update_option('blaster_whatsapp_notification_api_key', $new_api_key);
+
+                // Set a transient indicating a successful update
+                set_transient('blaster_api_key_saved', true, 5);
             }
         }
     }
