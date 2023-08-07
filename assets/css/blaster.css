@@ -6,3 +6,21 @@
     width: 100%;
     height: auto;
 }
+
+.blaster-info-box {
+    padding: 10px;
+    border: 1px solid #8c8f94;
+    background: #f2f2f2;
+    margin-top: 20px;
+    border-radius: 5px;
+ }
+
+.blaster-info-box p {
+    margin: 0;
+}
+
+div.blaster-form-wrapper form {
+    display: inline-block;
+    vertical-align: top;
+    margin-right: 20px;
+}

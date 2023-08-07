@@ -306,10 +306,10 @@ function blaster_add_settings_link($links, $file)
 function blaster_enqueue_assets()
 {
     // Enqueue the blaster.js file, dependent on jQuery, with a version number of 1.0.0, to be placed in the footer
-    wp_enqueue_script('blaster-js', plugins_url('/assets/js/blaster.js', __FILE__), array('jquery'), '1.0.0', true);
+    wp_enqueue_script('blaster-js', plugins_url('/assets/js/blaster.js', __FILE__), array('jquery'), '1.0.1', true);
 
     // Enqueue the blaster.css file, with a version number of 1.0.0
-    wp_enqueue_style('blaster-css', plugins_url('/assets/css/blaster.css', __FILE__), array(), '1.0.0');
+    wp_enqueue_style('blaster-css', plugins_url('/assets/css/blaster.css', __FILE__), array(), '1.0.1');
 }
 
 // Hook the blaster_enqueue_assets function to the admin_enqueue_scripts action, to load the assets on the WordPress admin pages
@@ -358,14 +358,14 @@ function blaster_whatsapp_notification_add_settings_section()
 
         update_option('blaster_whatsapp_notification_completed_message', $default_completed_message);
         update_option('blaster_whatsapp_notification_processing_message', $default_processing_message);
-    }
-
-    // Save settings
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $new_api_key = sanitize_text_field($_POST['blaster_whatsapp_notification_api_key']);
-        if (!empty($new_api_key) && blaster_is_valid_api_key('https://app.blaster.my/api', $new_api_key)) {
-            // If the API key is valid, update the option
-            update_option('blaster_whatsapp_notification_api_key', $new_api_key);
+    } else {
+        // Save settings
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $new_api_key = sanitize_text_field($_POST['blaster_whatsapp_notification_api_key']);
+            if (!empty($new_api_key) && blaster_is_valid_api_key('https://app.blaster.my/api', $new_api_key)) {
+                // If the API key is valid, update the option
+                update_option('blaster_whatsapp_notification_api_key', $new_api_key);
+            }
         }
     }
 
@@ -426,7 +426,7 @@ function blaster_whatsapp_notification_section_callback()
 function blaster_whatsapp_notification_completed_message_callback()
 {
     $custom_message = get_option('blaster_whatsapp_notification_completed_message', '');
-    $default_message_template = 'Hello {customer_first_name} {customer_last_name}! Your order with ID {order_id} has been completed. Thank you for your purchase!';
+    $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} has been completed.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your purchase!";
     $message = esc_textarea($custom_message);
     $message = $message ? $message : blaster_replace_template_tags($default_message_template, null);
 ?>
@@ -438,12 +438,12 @@ function blaster_whatsapp_notification_completed_message_callback()
 function blaster_whatsapp_notification_processing_message_callback()
 {
     $custom_message = get_option('blaster_whatsapp_notification_processing_message', '');
-    $default_message_template = 'Hello {customer_first_name} {customer_last_name}! Your order with ID {order_id} is now being processed. Thank you for your purchase!';
+    $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} is now being processed.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your purchase!";
     $message = esc_textarea($custom_message);
     $message = $message ? $message : blaster_replace_template_tags($default_message_template, null);
 ?>
     <textarea name="blaster_whatsapp_notification_processing_message" class="large-text auto-expand" style="min-height: 200px;"><?php echo $message; ?></textarea>
-    <div style="padding:10px; border:1px solid #8c8f94; background:#f2f2f2; margin-top:20px; border-radius: 5px;">
+    <div class="blaster-info-box">
         <p><strong>Available Variables:</strong></p>
         <ul>
             <li>{customer_first_name} - Customer's first name.</li>
@@ -479,3 +479,19 @@ function blaster_replace_template_tags($message_template, $order)
 
     return str_replace(array_keys($tags), array_values($tags), $message_template);
 }
+
+// Function to remove the options when the plugin is deactivated
+function blaster_whatsapp_notification_deactivate()
+{
+    $option_names = array(
+        'blaster_whatsapp_notification_api_key',
+        'blaster_whatsapp_notification_completed_message',
+        'blaster_whatsapp_notification_processing_message',
+        'blaster_api_connected_email',
+    );
+
+    foreach ($option_names as $option_name) {
+        delete_option($option_name);
+    }
+}
+register_deactivation_hook(__FILE__, 'blaster_whatsapp_notification_deactivate');
