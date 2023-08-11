@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Plugin Name:       Blaster.my - WP Notification
+ * Plugin Name:       Blaster.my - WooNotification
  * Plugin URI:        https://app.blaster.my/
  * Description:       Send WhatsApp notification upon order completion. Only for app.blaster.my subscriber.
  * Version:           1.0
@@ -31,13 +31,21 @@ You should have received a copy of the GNU General Public License
 along with Blaster.my WooNotification. If not, see {URI to Plugin License}.
 */
 
-// Define hooks to trigger WhatsApp notifications when an order is completed or processing
-add_action('woocommerce_order_status_completed', 'blaster_send_whatsapp_notification_on_order_status', 10, 1);
-add_action('woocommerce_order_status_processing', 'blaster_send_whatsapp_notification_on_order_status', 10, 1);
+// Define hooks to trigger WhatsApp notifications for various order statuses
+$order_statuses = array('completed', 'processing', 'pending', 'on-hold', 'cancelled', 'refunded');
 
-// Function to send WhatsApp notification when an order is completed or processing
-function blaster_send_whatsapp_notification_on_order_status($order_id)
+foreach ($order_statuses as $status) {
+    add_action('woocommerce_order_status_' . $status, 'blaster_send_whatsapp_notification_on_order_status', 10, 2);
+}
+
+// Function to send WhatsApp notification when an order status changes
+function blaster_send_whatsapp_notification_on_order_status($order_id, $order)
 {
+    // Get the order object if it's not provided directly
+    if (!$order || !is_a($order, 'WC_Order')) {
+        $order = wc_get_order($order_id);
+    }
+
     // Get the WhatsApp API key from the plugin settings
     $api_key = get_option('blaster_whatsapp_notification_api_key', '');
     $url = 'https://app.blaster.my/api';
@@ -48,28 +56,44 @@ function blaster_send_whatsapp_notification_on_order_status($order_id)
     }
 
     try {
-        // Get the order details based on the order ID
-        $order = wc_get_order($order_id);
+        // Get the user phone number from the order
         $user_phone_number = $order->get_billing_phone();
 
         $first_name = $order->get_billing_first_name();
         $last_name = $order->get_billing_last_name();
 
-        $status = $order->get_status();
-        $status = strtolower($status);
-
-        // Check if the order status is 'completed' or 'processing'
-        if ($status !== 'processing' && $status !== 'completed') {
-            return;
-        }
-
         // Customize the WhatsApp message based on the order status
-        if ($status === 'completed') {
-            $custom_message = get_option('blaster_whatsapp_notification_completed_message', '');
-            $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} has been completed.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your purchase!";
-        } elseif ($status === 'processing') {
-            $custom_message = get_option('blaster_whatsapp_notification_processing_message', '');
-            $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} is now being processed.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your purchase!";
+        $custom_message = '';
+        $order_status = $order->get_status();
+
+        switch ($order_status) {
+            case 'completed':
+                $custom_message = get_option('blaster_whatsapp_notification_completed_message', '');
+                $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} has been completed.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your purchase!";
+                break;
+            case 'processing':
+                $custom_message = get_option('blaster_whatsapp_notification_processing_message', '');
+                $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} is now being processed.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your purchase!";
+                break;
+                // Add more cases for other order statuses here
+            case 'pending':
+                $custom_message = get_option('blaster_whatsapp_notification_pending_message', '');
+                $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} is pending.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your order!";
+                break;
+            case 'on-hold':
+                $custom_message = get_option('blaster_whatsapp_notification_on_hold_message', '');
+                $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} is on hold.\n\n{order_details}\n\n{shipping_address}\n\nPlease wait for further updates.";
+                break;
+            case 'cancelled':
+                $custom_message = get_option('blaster_whatsapp_notification_cancelled_message', '');
+                $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} has been cancelled.\n\n{order_details}\n\n{shipping_address}\n\nIf you have any questions, please contact us.";
+                break;
+            case 'refunded':
+                $custom_message = get_option('blaster_whatsapp_notification_refunded_message', '');
+                $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} has been refunded.\n\n{order_details}\n\n{shipping_address}\n\nIf you have any concerns, please get in touch.";
+                break;
+            default:
+                return; // Exit if the order status is not handled
         }
 
         // Get order details and shipping address
@@ -84,7 +108,7 @@ function blaster_send_whatsapp_notification_on_order_status($order_id)
         $message = blaster_replace_template_tags($message, $order);
 
         // Send the WhatsApp message using the API
-        $response = blaster_send_whatsapp_message($url, $api_key, $user_phone_number, $message, $first_name, $last_name);
+        $response = blaster_send_whatsapp_message($url, $api_key, $user_phone_number, $message, $first_name, $last_name, $order_status);
 
         // Log the WhatsApp notification status (Sent or Failed) for the order
         if ($response['status'] == 400) {
@@ -97,6 +121,7 @@ function blaster_send_whatsapp_notification_on_order_status($order_id)
         blaster_log_whatsapp_notification($order_id, 'Failed');
     }
 }
+
 
 // Function to get order details as a formatted string
 function blaster_get_order_details($order)
@@ -236,7 +261,7 @@ function blaster_send_domain_to_api($url, $api_key, $domain)
 }
 
 // Function to send the WhatsApp message using the API
-function blaster_send_whatsapp_message($url, $api_key, $user_phone_number, $message, $first_name, $last_name)
+function blaster_send_whatsapp_message($url, $api_key, $user_phone_number, $message, $first_name, $last_name, $order_status)
 {
     $response = wp_remote_post(
         $url . '/message/sendText',
@@ -246,6 +271,7 @@ function blaster_send_whatsapp_message($url, $api_key, $user_phone_number, $mess
                 'number' => $user_phone_number,
                 'first_name' => $first_name,
                 'last_name' => $last_name,
+                'order_status' => $order_status,
                 'domain' => get_site_url(),
                 'options' => array(
                     'delay' => 1000,
@@ -282,8 +308,8 @@ function blaster_whatsapp_notification_add_submenu()
 {
     add_submenu_page(
         'options-general.php',
-        'Blaster.my - WP Notification Settings',
-        'Blaster.my - WP Notification',
+        'Blaster.my - WooNotification Settings',
+        'Blaster.my - WooNotification',
         'manage_options',
         'blaster_whatsapp_notification',
         'blaster_whatsapp_notification_page'
@@ -322,7 +348,7 @@ function blaster_whatsapp_notification_page()
     $connected_email = get_option('blaster_api_connected_email', '');
 ?>
     <div class="wrap">
-        <h1><?php echo esc_html__('Blaster.my WhatsApp Notification Settings', 'blaster-my-woonotification'); ?></h1>
+        <h1><?php echo esc_html__('Blaster.my - WooNotification Settings', 'blaster-my-woonotification'); ?></h1>
         <form method="post" action="options.php">
             <?php
             settings_fields('blaster_whatsapp_notification');
@@ -352,12 +378,20 @@ function blaster_whatsapp_notification_add_settings_section()
 {
     // Check if the "Reset Messages to Default" button is clicked
     if (isset($_POST['blaster_whatsapp_notification_reset_messages']) && $_POST['blaster_whatsapp_notification_reset_messages'] === '1') {
-        // Reset the custom message to its default state
+        // Reset the custom messages to their default states
         $default_completed_message = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} has been completed.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your purchase!";
         $default_processing_message = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} is now being processed.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your purchase!";
+        $default_pending_message = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} is pending.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your order!";
+        $default_on_hold_message = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} is on hold.\n\n{order_details}\n\n{shipping_address}\n\nPlease wait for further updates.";
+        $default_cancelled_message = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} has been cancelled.\n\n{order_details}\n\n{shipping_address}\n\nIf you have any questions, please contact us.";
+        $default_refunded_message = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} has been refunded.\n\n{order_details}\n\n{shipping_address}\n\nIf you have any concerns, please get in touch.";
 
         update_option('blaster_whatsapp_notification_completed_message', $default_completed_message);
         update_option('blaster_whatsapp_notification_processing_message', $default_processing_message);
+        update_option('blaster_whatsapp_notification_pending_message', $default_pending_message);
+        update_option('blaster_whatsapp_notification_on_hold_message', $default_on_hold_message);
+        update_option('blaster_whatsapp_notification_cancelled_message', $default_cancelled_message);
+        update_option('blaster_whatsapp_notification_refunded_message', $default_refunded_message);
 
         // Redirect to the settings page after resetting messages
         wp_safe_redirect(admin_url('options-general.php?page=blaster_whatsapp_notification'));
@@ -381,7 +415,7 @@ function blaster_whatsapp_notification_add_settings_section()
 
     add_settings_section(
         'blaster_whatsapp_notification_settings_section',
-        __('WhatsApp Notification Settings', 'blaster-my-woonotification'),
+        __('Settings', 'blaster-my-woonotification'),
         'blaster_whatsapp_notification_section_callback',
         'blaster_whatsapp_notification'
     );
@@ -408,6 +442,65 @@ function blaster_whatsapp_notification_add_settings_section()
         'blaster_whatsapp_notification_processing_message_callback',
         'blaster_whatsapp_notification',
         'blaster_whatsapp_notification_settings_section'
+    );
+
+    add_settings_field(
+        'blaster_whatsapp_notification_pending_message',
+        __('Pending Order Notification Message', 'blaster-my-woonotification'),
+        'blaster_whatsapp_notification_pending_message_callback',
+        'blaster_whatsapp_notification',
+        'blaster_whatsapp_notification_settings_section'
+    );
+
+    // Add the settings field for On Hold Order Notification Message
+    add_settings_field(
+        'blaster_whatsapp_notification_on_hold_message',
+        __('On Hold Order Notification Message', 'blaster-my-woonotification'),
+        'blaster_whatsapp_notification_on_hold_message_callback',
+        'blaster_whatsapp_notification',
+        'blaster_whatsapp_notification_settings_section'
+    );
+
+    // Add the settings field for Cancelled Order Notification Message
+    add_settings_field(
+        'blaster_whatsapp_notification_cancelled_message',
+        __('Cancelled Order Notification Message', 'blaster-my-woonotification'),
+        'blaster_whatsapp_notification_cancelled_message_callback',
+        'blaster_whatsapp_notification',
+        'blaster_whatsapp_notification_settings_section'
+    );
+
+    // Add the settings field for Refunded Order Notification Message
+    add_settings_field(
+        'blaster_whatsapp_notification_refunded_message',
+        __('Refunded Order Notification Message', 'blaster-my-woonotification'),
+        'blaster_whatsapp_notification_refunded_message_callback',
+        'blaster_whatsapp_notification',
+        'blaster_whatsapp_notification_settings_section'
+    );
+
+    // Register settings for Pending Order Notification Message
+    register_setting(
+        'blaster_whatsapp_notification',
+        'blaster_whatsapp_notification_pending_message'
+    );
+
+    // Register settings for On Hold Order Notification Message
+    register_setting(
+        'blaster_whatsapp_notification',
+        'blaster_whatsapp_notification_on_hold_message'
+    );
+
+    // Register settings for Cancelled Order Notification Message
+    register_setting(
+        'blaster_whatsapp_notification',
+        'blaster_whatsapp_notification_cancelled_message'
+    );
+
+    // Register settings for Refunded Order Notification Message
+    register_setting(
+        'blaster_whatsapp_notification',
+        'blaster_whatsapp_notification_refunded_message'
     );
 
     register_setting(
@@ -444,6 +537,42 @@ function blaster_whatsapp_notification_completed_message_callback()
 <?php
 }
 
+// Function to render the Pending Order Notification Message field
+function blaster_whatsapp_notification_pending_message_callback()
+{
+    $custom_message = get_option('blaster_whatsapp_notification_pending_message', '');
+    $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} is pending.\n\n{order_details}\n\n{shipping_address}\n\nThank you for your order!";
+    $message = esc_textarea($custom_message);
+    $message = $message ? $message : blaster_replace_template_tags($default_message_template, null);
+?>
+    <textarea name="blaster_whatsapp_notification_pending_message" class="large-text auto-expand" style="min-height: 200px;"><?php echo $message; ?></textarea>
+<?php
+}
+
+// Function to render the On Hold Order Notification Message field
+function blaster_whatsapp_notification_on_hold_message_callback()
+{
+    $custom_message = get_option('blaster_whatsapp_notification_on_hold_message', '');
+    $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} is on hold.\n\n{order_details}\n\n{shipping_address}\n\nPlease wait for further updates.";
+    $message = esc_textarea($custom_message);
+    $message = $message ? $message : blaster_replace_template_tags($default_message_template, null);
+?>
+    <textarea name="blaster_whatsapp_notification_on_hold_message" class="large-text auto-expand" style="min-height: 200px;"><?php echo $message; ?></textarea>
+<?php
+}
+
+// Function to render the Cancelled Order Notification Message field
+function blaster_whatsapp_notification_cancelled_message_callback()
+{
+    $custom_message = get_option('blaster_whatsapp_notification_cancelled_message', '');
+    $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} has been cancelled.\n\n{order_details}\n\n{shipping_address}\n\nIf you have any questions, please contact us.";
+    $message = esc_textarea($custom_message);
+    $message = $message ? $message : blaster_replace_template_tags($default_message_template, null);
+?>
+    <textarea name="blaster_whatsapp_notification_cancelled_message" class="large-text auto-expand" style="min-height: 200px;"><?php echo $message; ?></textarea>
+<?php
+}
+
 // Function to render the Processing Order Notification Message field
 function blaster_whatsapp_notification_processing_message_callback()
 {
@@ -453,6 +582,19 @@ function blaster_whatsapp_notification_processing_message_callback()
     $message = $message ? $message : blaster_replace_template_tags($default_message_template, null);
 ?>
     <textarea name="blaster_whatsapp_notification_processing_message" class="large-text auto-expand" style="min-height: 200px;"><?php echo $message; ?></textarea>
+
+<?php
+}
+
+// Function to render the Refunded Order Notification Message field
+function blaster_whatsapp_notification_refunded_message_callback()
+{
+    $custom_message = get_option('blaster_whatsapp_notification_refunded_message', '');
+    $default_message_template = "Hello {customer_first_name} {customer_last_name}!\n\nYour order with ID {order_id} has been refunded.\n\n{order_details}\n\n{shipping_address}\n\nIf you have any concerns, please get in touch.";
+    $message = esc_textarea($custom_message);
+    $message = $message ? $message : blaster_replace_template_tags($default_message_template, null);
+?>
+    <textarea name="blaster_whatsapp_notification_refunded_message" class="large-text auto-expand" style="min-height: 200px;"><?php echo $message; ?></textarea>
     <div class="blaster-info-box">
         <p><strong>Available Variables:</strong></p>
         <ul>
